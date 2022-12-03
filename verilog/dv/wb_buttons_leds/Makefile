@@ -15,64 +15,26 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ## Caravel Pointers
-CARAVEL_ROOT ?= ../../../caravel
-CARAVEL_PATH ?= $(CARAVEL_ROOT)
-CARAVEL_FIRMWARE_PATH = $(CARAVEL_PATH)/verilog/dv/caravel
-CARAVEL_VERILOG_PATH  = $(CARAVEL_PATH)/verilog
-CARAVEL_RTL_PATH = $(CARAVEL_VERILOG_PATH)/rtl
-CARAVEL_BEHAVIOURAL_MODELS = $(CARAVEL_VERILOG_PATH)/dv/caravel
-
-## User Project Pointers
-UPRJ_VERILOG_PATH ?= ../../../verilog
-UPRJ_RTL_PATH = $(UPRJ_VERILOG_PATH)/rtl
-UPRJ_BEHAVIOURAL_MODELS = ../
-
-## RISCV GCC 
-GCC_PATH?=/ef/apps/bin
-GCC_PREFIX?=riscv32-unknown-elf
-PDK_PATH?=/ef/tech/SW/sky130A
-
-## Simulation mode: RTL/GL
-SIM?=RTL
-
 .SUFFIXES:
+.SILENT: clean all
 
-PATTERN = wb_buttons_leds
 
-all:  ${PATTERN:=.vcd}
+PATTERNS = io_ports la_test1 la_test2 wb_port mprj_stimulus
 
-hex:  ${PATTERN:=.hex}
+all:  ${PATTERNS}
 
-%.vvp: %_tb.v %.hex
-ifeq ($(SIM),RTL)
-	iverilog -DFUNCTIONAL -DSIM -I $(PDK_PATH) \
-	-I $(CARAVEL_BEHAVIOURAL_MODELS) -I $(CARAVEL_RTL_PATH) \
-	-I $(UPRJ_BEHAVIOURAL_MODELS)    -I $(UPRJ_RTL_PATH) \
-	$< -o $@ 
-else  
-	iverilog -DFUNCTIONAL -DSIM -DGL -I $(PDK_PATH) \
-	-I $(CARAVEL_BEHAVIOURAL_MODELS) -I $(CARAVEL_RTL_PATH) -I $(CARAVEL_VERILOG_PATH) \
-	-I $(UPRJ_BEHAVIOURAL_MODELS) -I$(UPRJ_RTL_PATH)   -I $(UPRJ_VERILOG_PATH) \
-	$< -o $@ 
-endif
+	for i in ${PATTERNS}; do \
+		( cd $$i && make -f Makefile $${i}.vcd &> verify.log && grep Monitor verify.log) ; \
+	done
 
-%.vcd: %.vvp
-	vvp $<
+DV_PATTERNS = $(foreach dv, $(PATTERNS), verify-$(dv))
+$(DV_PATTERNS): verify-% : 
+	cd $* && make
 
-%.elf: %.c $(CARAVEL_FIRMWARE_PATH)/sections.lds $(CARAVEL_FIRMWARE_PATH)/start.s
-	${GCC_PATH}/${GCC_PREFIX}-gcc -I $(CARAVEL_PATH) -march=rv32imc -mabi=ilp32 -Wl,-Bstatic,-T,$(CARAVEL_FIRMWARE_PATH)/sections.lds,--strip-debug -ffreestanding -nostdlib -o $@ $(CARAVEL_FIRMWARE_PATH)/start.s $<
-
-%.hex: %.elf
-	${GCC_PATH}/${GCC_PREFIX}-objcopy -O verilog $< $@ 
-	# to fix flash base address
-	sed -i 's/@10000000/@00000000/g' $@
-
-%.bin: %.elf
-	${GCC_PATH}/${GCC_PREFIX}-objcopy -O binary $< /dev/stdout | tail -c +1048577 > $@
-
-# ---- Clean ----
-
-clean:
-	rm -f *.elf *.hex *.bin *.vvp *.vcd *.log
-
-.PHONY: clean hex all
+clean:  ${PATTERNS}
+	for i in ${PATTERNS}; do \
+		( cd $$i && \rm  -f *.elf *.hex *.bin *.vvp *.log *.vcd *.lst *.hexe ) ; \
+	done
+	rm -rf *.log
+	
+.PHONY: clean all
